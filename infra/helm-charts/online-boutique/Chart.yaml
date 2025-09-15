@@ -1,0 +1,17 @@
+apiVersion: v2
+name: online-boutique
+description: A Helm chart for Online Boutique microservices with AI agents
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - microservices
+  - ecommerce
+  - ai
+  - gemini
+home: https://github.com/GoogleCloudPlatform/microservices-demo
+sources:
+  - https://github.com/GoogleCloudPlatform/microservices-demo
+maintainers:
+  - name: Google Cloud Platform
+    email: microservices-demo@google.com

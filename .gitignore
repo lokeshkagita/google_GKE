@@ -1,28 +1,70 @@
+# IDE and Editor files
 .DS_Store
 .eclipse.buildship.core.prefs
-.gradle/
 .idea/
-.kubernetes-manifests-*/
 .project
-.skaffold-*.yaml
-.terraform.lock.hcl
-.terraform/*
-.venv/
 .vs/
 .vscode/
 *.iml
 *.ipr
 *.iws
-*.pyc
 *.swp
+*~
+
+# Environment and secrets
+.env
+.env.local
+.env.production
+.env.staging
+*.pem
+*.key
+secrets/
+
+# Build artifacts and dependencies
+.gradle/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+bin/
+obj/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+vendor/
+pkg/a
+
+# Terraform
+.terraform.lock.hcl
+.terraform/*
 *.tfstate*
 *.tfvars
-*~
-bin/
-build/
-Dockerfile.pip
-node_modules/
-obj/
-pkg/
+terraform.tfvars
+
+# Kubernetes generated files
+.kubernetes-manifests-*/
+.skaffold-*.yaml
 release/wi-kubernetes-manifests.yaml
-vendor/
+
+# Docker
+Dockerfile.pip
+
+# OS generated files
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp

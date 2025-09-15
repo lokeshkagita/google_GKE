@@ -1,0 +1,58 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatbotservice
+  labels:
+    app: chatbotservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chatbotservice
+  template:
+    metadata:
+      labels:
+        app: chatbotservice
+    spec:
+      serviceAccountName: chatbotservice
+      containers:
+      - name: chatbotservice
+        image: chatbotservice:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        readinessProbe:
+          grpc:
+            port: 8080
+        livenessProbe:
+          grpc:
+            port: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatbotservice
+  labels:
+    app: chatbotservice
+spec:
+  selector:
+    app: chatbotservice
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chatbotservice

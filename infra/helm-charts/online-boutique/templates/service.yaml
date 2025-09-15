@@ -1,0 +1,67 @@
+{{- range $serviceName, $service := .Values.services }}
+{{- if $service.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $serviceName }}
+  labels:
+    app: {{ $serviceName }}
+    chart: {{ include "online-boutique.chart" $ }}
+    release: {{ $.Release.Name }}
+    heritage: {{ $.Release.Service }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $serviceName }}
+    release: {{ $.Release.Name }}
+  ports:
+  - name: {{ if or (eq $serviceName "frontend") (eq $serviceName "loadgenerator") }}http{{ else }}grpc{{ end }}
+    port: {{ if eq $serviceName "emailservice" }}5000{{ else }}{{ $service.port }}{{ end }}
+    targetPort: {{ $service.port }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.redis.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cart
+  labels:
+    app: redis-cart
+    chart: {{ include "online-boutique.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-cart
+    release: {{ .Release.Name }}
+  ports:
+  - name: tcp-redis
+    port: {{ .Values.redis.port }}
+    targetPort: {{ .Values.redis.port }}
+{{- end }}
+
+{{- if .Values.services.frontend.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-external
+  labels:
+    app: frontend
+    chart: {{ include "online-boutique.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend
+    release: {{ .Release.Name }}
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+{{- end }}

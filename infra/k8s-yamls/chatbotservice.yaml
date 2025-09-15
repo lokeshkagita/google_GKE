@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatbotservice
+  labels:
+    app: chatbotservice
+spec:
+  selector:
+    matchLabels:
+      app: chatbotservice
+  template:
+    metadata:
+      labels:
+        app: chatbotservice
+    spec:
+      serviceAccountName: chatbotservice
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: server
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: chatbotservice:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: grpc
+        - containerPort: 8081
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-secret
+              key: api-key
+              optional: true
+        - name: EMAIL_SERVICE_ADDR
+          value: "emailservice:5000"
+        - name: DISABLE_PROFILER
+          value: "1"
+        readinessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        livenessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatbotservice
+  labels:
+    app: chatbotservice
+spec:
+  type: ClusterIP
+  selector:
+    app: chatbotservice
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+  - name: http
+    port: 8081
+    targetPort: 8081
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chatbotservice

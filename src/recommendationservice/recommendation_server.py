@@ -19,10 +19,12 @@ import random
 import time
 import traceback
 from concurrent import futures
+import json
 
 import googlecloudprofiler
 from google.auth.exceptions import DefaultCredentialsError
 import grpc
+import google.generativeai as genai
 
 import demo_pb2
 import demo_pb2_grpc
@@ -64,19 +66,78 @@ def initStackdriverProfiling():
   return
 
 class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
+    def __init__(self):
+        # Initialize Gemini AI if API key is available
+        self.gemini_model = None
+        gemini_api_key = os.environ.get('GEMINI_API_KEY')
+        if gemini_api_key:
+            try:
+                genai.configure(api_key=gemini_api_key)
+                self.gemini_model = genai.GenerativeModel('gemini-pro')
+                logger.info("Gemini AI initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Gemini AI: {e}")
+        else:
+            logger.info("GEMINI_API_KEY not set, using fallback recommendations")
+
+    def _get_ai_recommendations(self, user_products, available_products):
+        """Get AI-powered recommendations using Gemini"""
+        if not self.gemini_model:
+            return None
+        
+        try:
+            # Create prompt for Gemini
+            prompt = f"""
+            Based on a user's current cart containing these products: {user_products}
+            
+            From this available product catalog: {available_products[:20]}  # Limit for prompt size
+            
+            Recommend 5 products that would complement their purchase. Consider:
+            - Product categories and compatibility
+            - Cross-selling opportunities
+            - User preferences based on current selection
+            
+            Return only a JSON array of product IDs, no other text.
+            Example: ["OLJCESPC7Z", "66VCHSJNUP", "1YMWWN1N4O"]
+            """
+            
+            response = self.gemini_model.generate_content(prompt)
+            
+            # Parse the response
+            try:
+                recommendations = json.loads(response.text.strip())
+                # Validate recommendations are in available products
+                valid_recommendations = [pid for pid in recommendations if pid in available_products]
+                return valid_recommendations[:5]  # Limit to 5
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse Gemini response as JSON")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"Gemini AI recommendation failed: {e}")
+            return None
+
     def ListRecommendations(self, request, context):
         max_responses = 5
         # fetch list of products from product catalog stub
         cat_response = product_catalog_stub.ListProducts(demo_pb2.Empty())
         product_ids = [x.id for x in cat_response.products]
         filtered_products = list(set(product_ids)-set(request.product_ids))
-        num_products = len(filtered_products)
-        num_return = min(max_responses, num_products)
-        # sample list of indicies to return
-        indices = random.sample(range(num_products), num_return)
-        # fetch product ids from indices
-        prod_list = [filtered_products[i] for i in indices]
-        logger.info("[Recv ListRecommendations] product_ids={}".format(prod_list))
+        
+        # Try AI-powered recommendations first
+        ai_recommendations = self._get_ai_recommendations(request.product_ids, filtered_products)
+        
+        if ai_recommendations:
+            prod_list = ai_recommendations
+            logger.info("[AI Recommendations] product_ids={}".format(prod_list))
+        else:
+            # Fallback to random selection
+            num_products = len(filtered_products)
+            num_return = min(max_responses, num_products)
+            indices = random.sample(range(num_products), num_return)
+            prod_list = [filtered_products[i] for i in indices]
+            logger.info("[Random Recommendations] product_ids={}".format(prod_list))
+        
         # build and return response
         response = demo_pb2.ListRecommendationsResponse()
         response.product_ids.extend(prod_list)

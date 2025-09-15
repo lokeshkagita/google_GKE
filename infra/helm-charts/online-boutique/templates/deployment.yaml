@@ -1,0 +1,167 @@
+{{- range $serviceName, $service := .Values.services }}
+{{- if $service.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $serviceName }}
+  labels:
+    app: {{ $serviceName }}
+    chart: {{ include "online-boutique.chart" $ }}
+    release: {{ $.Release.Name }}
+    heritage: {{ $.Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $serviceName }}
+      release: {{ $.Release.Name }}
+  replicas: {{ $service.replicas | default 1 }}
+  template:
+    metadata:
+      labels:
+        app: {{ $serviceName }}
+        release: {{ $.Release.Name }}
+    spec:
+      serviceAccountName: {{ $serviceName }}
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        {{- toYaml $.Values.securityContext | nindent 8 }}
+      containers:
+      - name: server
+        securityContext:
+          {{- toYaml $.Values.podSecurityContext | nindent 10 }}
+        image: "{{ $.Values.global.imageRegistry }}/{{ $.Values.global.projectId }}/{{ $service.image }}:{{ $.Values.global.imageTag }}"
+        ports:
+        - containerPort: {{ $service.port }}
+        env:
+        - name: PORT
+          value: "{{ $service.port }}"
+        {{- if $service.aiEnabled }}
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-secret
+              key: api-key
+              optional: true
+        {{- end }}
+        {{- if eq $serviceName "recommendationservice" }}
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "productcatalogservice:3550"
+        {{- end }}
+        {{- if eq $serviceName "chatbotservice" }}
+        - name: EMAIL_SERVICE_ADDR
+          value: "emailservice:5000"
+        {{- end }}
+        {{- if eq $serviceName "checkoutservice" }}
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "productcatalogservice:3550"
+        - name: SHIPPING_SERVICE_ADDR
+          value: "shippingservice:50051"
+        - name: PAYMENT_SERVICE_ADDR
+          value: "paymentservice:50051"
+        - name: EMAIL_SERVICE_ADDR
+          value: "emailservice:5000"
+        - name: CURRENCY_SERVICE_ADDR
+          value: "currencyservice:7000"
+        - name: CART_SERVICE_ADDR
+          value: "cartservice:7070"
+        - name: FRAUD_DETECTION_SERVICE_ADDR
+          value: "frauddetectionservice:8080"
+        {{- end }}
+        {{- if eq $serviceName "frontend" }}
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "productcatalogservice:3550"
+        - name: CURRENCY_SERVICE_ADDR
+          value: "currencyservice:7000"
+        - name: CART_SERVICE_ADDR
+          value: "cartservice:7070"
+        - name: RECOMMENDATION_SERVICE_ADDR
+          value: "recommendationservice:8080"
+        - name: SHIPPING_SERVICE_ADDR
+          value: "shippingservice:50051"
+        - name: CHECKOUT_SERVICE_ADDR
+          value: "checkoutservice:5050"
+        - name: AD_SERVICE_ADDR
+          value: "adservice:9555"
+        - name: CHATBOT_SERVICE_ADDR
+          value: "chatbotservice:8080"
+        {{- end }}
+        {{- if eq $serviceName "cartservice" }}
+        - name: REDIS_ADDR
+          value: "redis-cart:6379"
+        {{- end }}
+        - name: DISABLE_PROFILER
+          value: "1"
+        readinessProbe:
+          periodSeconds: 5
+          {{- if or (eq $serviceName "frontend") (eq $serviceName "loadgenerator") }}
+          httpGet:
+            path: "/_healthz"
+            port: {{ $service.port }}
+          {{- else }}
+          grpc:
+            port: {{ $service.port }}
+          {{- end }}
+        livenessProbe:
+          periodSeconds: 5
+          {{- if or (eq $serviceName "frontend") (eq $serviceName "loadgenerator") }}
+          httpGet:
+            path: "/_healthz"
+            port: {{ $service.port }}
+          {{- else }}
+          grpc:
+            port: {{ $service.port }}
+          {{- end }}
+        resources:
+          {{- toYaml $service.resources | nindent 10 }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.redis.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cart
+  labels:
+    app: redis-cart
+    chart: {{ include "online-boutique.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app: redis-cart
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: redis-cart
+        release: {{ .Release.Name }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+      - name: redis
+        securityContext:
+          {{- toYaml .Values.podSecurityContext | nindent 10 }}
+        image: {{ .Values.redis.image }}
+        ports:
+        - containerPort: {{ .Values.redis.port }}
+        readinessProbe:
+          periodSeconds: 5
+          tcpSocket:
+            port: {{ .Values.redis.port }}
+        livenessProbe:
+          periodSeconds: 5
+          tcpSocket:
+            port: {{ .Values.redis.port }}
+        volumeMounts:
+        - mountPath: /data
+          name: redis-data
+        resources:
+          {{- toYaml .Values.redis.resources | nindent 10 }}
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+{{- end }}

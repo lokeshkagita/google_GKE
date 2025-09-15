@@ -1,0 +1,233 @@
+# Default values for online-boutique
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  projectId: "PROJECT_ID"
+  imageRegistry: "gcr.io"
+  imageTag: "latest"
+
+# Gemini AI configuration
+gemini:
+  apiKey: "AIzaSyARwU4DmXvFA2BWMv8r_HbJQ4qfcbliC-Q"
+  enabled: true
+
+# Individual service configurations
+services:
+  frontend:
+    enabled: true
+    image: "frontend"
+    port: 8080
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  cartservice:
+    enabled: true
+    image: "cartservice"
+    port: 7070
+    replicas: 1
+    resources:
+      requests:
+        cpu: 200m
+        memory: 64Mi
+      limits:
+        cpu: 300m
+        memory: 128Mi
+
+  productcatalogservice:
+    enabled: true
+    image: "productcatalogservice"
+    port: 3550
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  currencyservice:
+    enabled: true
+    image: "currencyservice"
+    port: 7000
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  paymentservice:
+    enabled: true
+    image: "paymentservice"
+    port: 50051
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  shippingservice:
+    enabled: true
+    image: "shippingservice"
+    port: 50051
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  emailservice:
+    enabled: true
+    image: "emailservice"
+    port: 8080
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  checkoutservice:
+    enabled: true
+    image: "checkoutservice"
+    port: 5050
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  recommendationservice:
+    enabled: true
+    image: "recommendationservice"
+    port: 8080
+    replicas: 1
+    aiEnabled: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 220Mi
+      limits:
+        cpu: 200m
+        memory: 450Mi
+
+  adservice:
+    enabled: true
+    image: "adservice"
+    port: 9555
+    replicas: 1
+    resources:
+      requests:
+        cpu: 200m
+        memory: 180Mi
+      limits:
+        cpu: 300m
+        memory: 300Mi
+
+  # AI Services
+  chatbotservice:
+    enabled: true
+    image: "chatbotservice"
+    port: 8080
+    replicas: 1
+    aiEnabled: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  frauddetectionservice:
+    enabled: true
+    image: "frauddetectionservice"
+    port: 8080
+    replicas: 1
+    aiEnabled: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  loadgenerator:
+    enabled: true
+    image: "loadgenerator"
+    replicas: 1
+    resources:
+      requests:
+        cpu: 300m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# Redis configuration
+redis:
+  enabled: true
+  image: "redis:alpine"
+  port: 6379
+  resources:
+    requests:
+      cpu: 70m
+      memory: 200Mi
+    limits:
+      cpu: 125m
+      memory: 256Mi
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: online-boutique.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Security context
+securityContext:
+  fsGroup: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Pod security context
+podSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  privileged: false
+  readOnlyRootFilesystem: true

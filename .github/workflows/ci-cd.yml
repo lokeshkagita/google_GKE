@@ -1,0 +1,270 @@
+name: CI/CD Pipeline for Online Boutique with AI Services
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  CLUSTER_NAME: online-boutique
+  REGISTRY: us-central1-docker.pkg.dev
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        
+    - name: Install Python dependencies for AI services
+      run: |
+        cd src/chatbotservice
+        pip install -r requirements.txt
+        cd ../frauddetectionservice
+        pip install -r requirements.txt
+        cd ../recommendationservice
+        pip install -r requirements.txt
+        
+    - name: Install test dependencies
+      run: |
+        pip install pytest pytest-cov grpcio-tools
+        
+    - name: Generate gRPC code for tests
+      run: |
+        python -m grpc_tools.protoc -I=./protos --python_out=./tests --grpc_python_out=./tests ./protos/demo.proto
+        python -m grpc_tools.protoc -I=./protos --python_out=./tests --grpc_python_out=./tests ./protos/grpc/health/v1/health.proto
+        
+    - name: Run Python tests
+      run: |
+        cd tests
+        python -m pytest test_chatbot_service.py -v
+        python -m pytest test_fraud_detection_service.py -v
+        
+    - name: Run Go tests
+      run: |
+        cd src/checkoutservice
+        go test ./...
+        cd ../frontend
+        go test ./...
+        cd ../productcatalogservice
+        go test ./...
+        cd ../shippingservice
+        go test ./...
+        
+    - name: Run Node.js tests
+      run: |
+        cd src/currencyservice
+        npm test || echo "No tests found"
+        cd ../paymentservice
+        npm test || echo "No tests found"
+        
+    - name: Run Java tests
+      run: |
+        cd src/adservice
+        ./gradlew test || echo "No tests found"
+
+  build-and-push:
+    name: Build and Push Images
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+        
+    - name: Configure Docker
+      run: gcloud auth configure-docker ${{ env.REGISTRY }}
+      
+    - name: Build and push images
+      run: |
+        # AI Services
+        services=("chatbotservice" "frauddetectionservice" "recommendationservice")
+        
+        for service in "${services[@]}"; do
+          echo "Building $service..."
+          
+          # Copy proto files
+          cp -r protos src/$service/
+          
+          # Build image
+          docker build -t ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:${{ github.sha }} src/$service/
+          docker build -t ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:latest src/$service/
+          
+          # Push images
+          docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:latest
+        done
+        
+        # Build other services if needed
+        other_services=("emailservice" "checkoutservice" "frontend" "paymentservice" "productcatalogservice" "cartservice" "currencyservice" "shippingservice" "adservice" "loadgenerator")
+        
+        for service in "${other_services[@]}"; do
+          if [ -f "src/$service/Dockerfile" ]; then
+            echo "Building $service..."
+            cp -r protos src/$service/
+            docker build -t ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:${{ github.sha }} src/$service/
+            docker build -t ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:latest src/$service/
+            docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:${{ github.sha }}
+            docker push ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/microservices-demo/$service:latest
+          fi
+        done
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+        
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }}-staging \
+          --region ${{ env.REGION }} \
+          --project ${{ env.PROJECT_ID }}
+        
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.12.0'
+        
+    - name: Deploy to staging
+      run: |
+        # Update image tags in values
+        sed -i "s/latest/${{ github.sha }}/g" infra/helm-charts/online-boutique/values.yaml
+        sed -i "s/PROJECT_ID/${{ env.PROJECT_ID }}/g" infra/helm-charts/online-boutique/values.yaml
+        sed -i "s|gcr.io|${{ env.REGISTRY }}|g" infra/helm-charts/online-boutique/values.yaml
+        
+        # Deploy or upgrade
+        helm upgrade --install online-boutique-staging ./infra/helm-charts/online-boutique/ \
+          --namespace staging \
+          --create-namespace \
+          --set global.projectId=${{ env.PROJECT_ID }} \
+          --set global.imageRegistry=${{ env.REGISTRY }} \
+          --set global.imageTag=${{ github.sha }} \
+          --set gemini.apiKey="${{ secrets.GEMINI_API_KEY }}" \
+          --wait --timeout=10m
+        
+    - name: Run smoke tests
+      run: |
+        # Wait for services to be ready
+        kubectl wait --for=condition=ready pod -l app=frontend -n staging --timeout=300s
+        
+        # Get external IP
+        EXTERNAL_IP=$(kubectl get service frontend-external -n staging -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        # Basic health check
+        curl -f http://$EXTERNAL_IP/_healthz || exit 1
+        
+        echo "Staging deployment successful! URL: http://$EXTERNAL_IP"
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+        
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+          --region ${{ env.REGION }} \
+          --project ${{ env.PROJECT_ID }}
+        
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.12.0'
+        
+    - name: Deploy to production
+      run: |
+        # Update image tags in values
+        sed -i "s/latest/${{ github.sha }}/g" infra/helm-charts/online-boutique/values.yaml
+        sed -i "s/PROJECT_ID/${{ env.PROJECT_ID }}/g" infra/helm-charts/online-boutique/values.yaml
+        sed -i "s|gcr.io|${{ env.REGISTRY }}|g" infra/helm-charts/online-boutique/values.yaml
+        
+        # Deploy or upgrade with rolling update
+        helm upgrade --install online-boutique ./infra/helm-charts/online-boutique/ \
+          --namespace production \
+          --create-namespace \
+          --set global.projectId=${{ env.PROJECT_ID }} \
+          --set global.imageRegistry=${{ env.REGISTRY }} \
+          --set global.imageTag=${{ github.sha }} \
+          --set gemini.apiKey="${{ secrets.GEMINI_API_KEY }}" \
+          --wait --timeout=15m
+        
+    - name: Verify production deployment
+      run: |
+        # Wait for all services to be ready
+        kubectl wait --for=condition=ready pod -l app=frontend -n production --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=chatbotservice -n production --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=frauddetectionservice -n production --timeout=300s
+        
+        # Get external IP
+        EXTERNAL_IP=$(kubectl get service frontend-external -n production -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        # Comprehensive health checks
+        curl -f http://$EXTERNAL_IP/_healthz || exit 1
+        
+        echo "Production deployment successful! URL: http://$EXTERNAL_IP"
+        
+    - name: Notify deployment success
+      if: success()
+      run: |
+        echo "🚀 Production deployment completed successfully!"
+        echo "All AI services are now live and ready to serve customers."

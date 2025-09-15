@@ -1,0 +1,407 @@
+# Complete Kubernetes deployment for Online Boutique with AI services
+# This file combines all services including the new AI agents
+
+# Apply in this order:
+# 1. kubectl apply -f gemini-secret.yaml
+# 2. kubectl apply -f complete-deployment.yaml
+
+---
+# Redis Cart
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cart
+  labels:
+    app: redis-cart
+spec:
+  selector:
+    matchLabels:
+      app: redis-cart
+  template:
+    metadata:
+      labels:
+        app: redis-cart
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: redis
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: redis:alpine
+        ports:
+        - containerPort: 6379
+        readinessProbe:
+          periodSeconds: 5
+          tcpSocket:
+            port: 6379
+        livenessProbe:
+          periodSeconds: 5
+          tcpSocket:
+            port: 6379
+        volumeMounts:
+        - mountPath: /data
+          name: redis-data
+        resources:
+          limits:
+            memory: 256Mi
+            cpu: 125m
+          requests:
+            cpu: 70m
+            memory: 200Mi
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cart
+  labels:
+    app: redis-cart
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-cart
+  ports:
+  - name: tcp-redis
+    port: 6379
+    targetPort: 6379
+
+---
+# Email Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emailservice
+  labels:
+    app: emailservice
+spec:
+  selector:
+    matchLabels:
+      app: emailservice
+  template:
+    metadata:
+      labels:
+        app: emailservice
+    spec:
+      serviceAccountName: emailservice
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: server
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: gcr.io/PROJECT_ID/emailservice:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: DISABLE_PROFILER
+          value: "1"
+        readinessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        livenessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: emailservice
+  labels:
+    app: emailservice
+spec:
+  type: ClusterIP
+  selector:
+    app: emailservice
+  ports:
+  - name: grpc
+    port: 5000
+    targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: emailservice
+
+---
+# Recommendation Service (Enhanced with AI)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendationservice
+  labels:
+    app: recommendationservice
+spec:
+  selector:
+    matchLabels:
+      app: recommendationservice
+  template:
+    metadata:
+      labels:
+        app: recommendationservice
+    spec:
+      serviceAccountName: recommendationservice
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: server
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: gcr.io/PROJECT_ID/recommendationservice:latest
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        livenessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: PRODUCT_CATALOG_SERVICE_ADDR
+          value: "productcatalogservice:3550"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-secret
+              key: api-key
+              optional: true
+        - name: DISABLE_PROFILER
+          value: "1"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 220Mi
+          limits:
+            cpu: 200m
+            memory: 450Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommendationservice
+  labels:
+    app: recommendationservice
+spec:
+  type: ClusterIP
+  selector:
+    app: recommendationservice
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: recommendationservice
+
+---
+# Chatbot Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatbotservice
+  labels:
+    app: chatbotservice
+spec:
+  selector:
+    matchLabels:
+      app: chatbotservice
+  template:
+    metadata:
+      labels:
+        app: chatbotservice
+    spec:
+      serviceAccountName: chatbotservice
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: server
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: gcr.io/PROJECT_ID/chatbotservice:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-secret
+              key: api-key
+              optional: true
+        - name: EMAIL_SERVICE_ADDR
+          value: "emailservice:5000"
+        - name: DISABLE_PROFILER
+          value: "1"
+        readinessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        livenessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chatbotservice
+  labels:
+    app: chatbotservice
+spec:
+  type: ClusterIP
+  selector:
+    app: chatbotservice
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chatbotservice
+
+---
+# Fraud Detection Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frauddetectionservice
+  labels:
+    app: frauddetectionservice
+spec:
+  selector:
+    matchLabels:
+      app: frauddetectionservice
+  template:
+    metadata:
+      labels:
+        app: frauddetectionservice
+    spec:
+      serviceAccountName: frauddetectionservice
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: server
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: gcr.io/PROJECT_ID/frauddetectionservice:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-secret
+              key: api-key
+              optional: true
+        - name: DISABLE_PROFILER
+          value: "1"
+        readinessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        livenessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frauddetectionservice
+  labels:
+    app: frauddetectionservice
+spec:
+  type: ClusterIP
+  selector:
+    app: frauddetectionservice
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frauddetectionservice

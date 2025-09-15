@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frauddetectionservice
+  labels:
+    app: frauddetectionservice
+spec:
+  selector:
+    matchLabels:
+      app: frauddetectionservice
+  template:
+    metadata:
+      labels:
+        app: frauddetectionservice
+    spec:
+      serviceAccountName: frauddetectionservice
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: server
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        image: frauddetectionservice:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-secret
+              key: api-key
+              optional: true
+        - name: DISABLE_PROFILER
+          value: "1"
+        readinessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        livenessProbe:
+          periodSeconds: 5
+          grpc:
+            port: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frauddetectionservice
+  labels:
+    app: frauddetectionservice
+spec:
+  type: ClusterIP
+  selector:
+    app: frauddetectionservice
+  ports:
+  - name: grpc
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frauddetectionservice
